@@ -1,4 +1,4 @@
-@bot.message_handler(commands==['analyze'])
+@bot.message_handler(commands=['analyze'])
 def analyze(message):
     try:
         team = message.text.split(" ", 1)[1]
