@@ -1,30 +1,14 @@
-import telebot
+importimport telebot
 import requests
 import os
 
 TOKEN = os.getenv("TOKEN")
 API_KEY = os.getenv("API_KEY")
 
-bot = telebot.TeleBot(TOKEN)
+if not TOKEN:
+    raise ValueError("TOKEN is missing. Check Railway variables.")
 
-
-def get_team_id(team_name):
-    url = "https://v3.football.api-sports.io/teams"
-    headers = {
-        "x-apisports-key": API_KEY
-    }
-    params = {
-        "search": team_name
-    }
-
-    response = requests.get(url, headers=headers, params=params)
-    data = response.json()
-
-    if data["results"] == 0:
-        return None
-
-    return data["response"][0]["team"]["id"]
-
+bot = telebot.TeleBot(TOKEN)]
 
 @bot.message_handler(commands=['start'])
 def start(message):
