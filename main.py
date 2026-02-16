@@ -2,6 +2,7 @@ import telebot
 import requests
 import os
 
+# ------------------ ENV VARIABLES ------------------
 TOKEN = os.getenv("TOKEN")
 API_KEY = os.getenv("API_KEY")
 
@@ -10,22 +11,23 @@ if not TOKEN:
 
 bot = telebot.TeleBot(TOKEN)
 
-
+# ------------------ START COMMAND ------------------
 @bot.message_handler(commands=['start'])
 def start(message):
     bot.reply_to(message, "🔥 Martin Betting Analyzer\nUse /ping to check bot")
 
-
+# ------------------ PING COMMAND ------------------
 @bot.message_handler(commands=['ping'])
 def ping(message):
     bot.reply_to(message, "✅ Bot is alive!")
 
+# ------------------ ANALYZE COMMAND ------------------
 @bot.message_handler(commands=['analyze'])
 def analyze(message):
     try:
         team_name = message.text.split(" ", 1)[1]
 
-        # Step 1: Get Team ID from API
+        # Step 1: Get Team ID
         url_team = "https://v3.football.api-sports.io/teams"
         headers = {"x-apisports-key": API_KEY}
         params_team = {"search": team_name}
@@ -40,12 +42,9 @@ def analyze(message):
         team_id = team_info["id"]
         team_name_correct = team_info["name"]
 
-        # Step 2: Get last 5 fixtures of the team
+        # Step 2: Get last 5 fixtures
         url_fixtures = "https://v3.football.api-sports.io/fixtures"
-        params_fixtures = {
-            "team": team_id,
-            "last": 5
-        }
+        params_fixtures = {"team": team_id, "last": 5}
         response_fixtures = requests.get(url_fixtures, headers=headers, params=params_fixtures)
         data_fixtures = response_fixtures.json()
 
@@ -53,9 +52,9 @@ def analyze(message):
             bot.reply_to(message, f"No recent matches found for {team_name_correct}")
             return
 
-        # Step 3: Calculate probabilities
         last_matches = data_fixtures["response"]
 
+        # Step 3: Calculate probabilities
         over15_count = 0
         over25_count = 0
         btts_count = 0
@@ -75,7 +74,7 @@ def analyze(message):
             if home_goals > 0 and away_goals > 0:
                 btts_count += 1
 
-            # Win calculation (assuming team is home or away)
+            # Win calculation
             team_is_home = match["teams"]["home"]["id"] == team_id
             if team_is_home and home_goals > away_goals:
                 wins += 1
@@ -99,7 +98,6 @@ Win Probability: {win_prob}%
 
 ⭐ Safest Pick: {'Over 1.5' if over15_prob >= 70 else 'Check BTTS / Win'}
 """
-
         bot.reply_to(message, reply)
 
     except IndexError:
@@ -107,5 +105,5 @@ Win Probability: {win_prob}%
     except Exception as e:
         bot.reply_to(message, f"❌ An error occurred: {e}")
 
-
+# ------------------ START POLLING ------------------
 bot.infinity_polling()
