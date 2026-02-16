@@ -26,7 +26,10 @@ def analyze(message):
         team_name = message.text.split(" ", 1)[1]
 
         url = "https://v3.football.api-sports.io/teams"
-        headers = {"x-apisports-key": API_KEY}
+        headers = {
+    "x-apisports-key": API_KEY,
+    "Accept": "application/json"
+        }
         params = {"search": team_name}
 
         response = requests.get(url, headers=headers, params=params)
