@@ -1,11 +1,17 @@
 import telebot
-import random
+import requests
 import os
+from datetime import datetime, timedelta
 
 # ------------------ ENV VARIABLES ------------------
 TOKEN = os.getenv("TOKEN")
+API_KEY = os.getenv("API_KEY")  # Your Football-Data.org API key
+
 if not TOKEN:
     raise ValueError("TOKEN is missing in Railway variables.")
+
+if not API_KEY:
+    raise ValueError("API_KEY is missing in Railway variables.")
 
 bot = telebot.TeleBot(TOKEN)
 
@@ -13,158 +19,113 @@ bot = telebot.TeleBot(TOKEN)
 @bot.message_handler(commands=['start'])
 def start(message):
     bot.reply_to(message,
-        "🔥 Martin Betting Analyzer (Advanced Multi-League)\n\n"
+        "🔥 Martin Real Analyzer\n\n"
         "Commands:\n"
         "/ping - Check if bot is alive\n"
-        "/analyze <team1>; <team2>; ... - Multi-team analysis\n"
-        "/daily - Top safest picks per league today"
+        "/analyze <team name> - Get real stats for team\n"
+        "/daily - Top safest picks per league (simulated)"
     )
 
 @bot.message_handler(commands=['ping'])
 def ping(message):
     bot.reply_to(message, "✅ Bot is alive!")
 
-# ------------------ LEAGUES & TEAMS ------------------
-leagues = {
-    "Premier League": [
-        "Arsenal FC", "Chelsea FC", "Liverpool FC",
-        "Manchester United FC", "Manchester City FC",
-        "Tottenham Hotspur FC", "Leicester City FC", "Everton FC"
-    ],
-    "La Liga": [
-        "Real Madrid", "Barcelona", "Atletico Madrid",
-        "Sevilla", "Valencia"
-    ],
-    "Serie A": [
-        "Juventus", "AC Milan", "Inter Milan",
-        "Napoli", "Roma"
-    ],
-    "Bundesliga": [
-        "Bayern Munich", "Borussia Dortmund",
-        "RB Leipzig", "Bayer Leverkusen"
-    ],
-    "Ligue 1": [
-        "Paris SG", "Marseille", "Monaco",
-        "Lyon", "Nice"
-    ]
+# ------------------ TOP TEAMS WITH Football-Data IDs ------------------
+# Premier League example: add more leagues and teams as needed
+teams = {
+    "Arsenal FC": 57,
+    "Chelsea FC": 61,
+    "Liverpool FC": 64,
+    "Manchester United FC": 66,
+    "Manchester City FC": 65,
+    "Tottenham Hotspur FC": 73
 }
 
-# Flatten for validation
-all_teams = [t for t_list in leagues.values() for t in t_list]
+BASE_URL = "https://api.football-data.org/v4"
 
-# ------------------ ANALYZE MULTI-TEAM COMMAND ------------------
+# ------------------ ANALYZE REAL TEAM ------------------
 @bot.message_handler(commands=['analyze'])
 def analyze(message):
     try:
         raw_text = message.text.split(" ", 1)
         if len(raw_text) < 2:
-            bot.reply_to(message, "Usage: /analyze <team1>; <team2>; ...")
+            bot.reply_to(message, "Usage: /analyze <team name>")
             return
 
-        teams_input = [t.strip() for t in raw_text[1].split(";")]
-        results = []
+        team_name = raw_text[1].strip()
+        if team_name not in teams:
+            bot.reply_to(message, "❌ Team not found in supported teams")
+            return
 
-        for team_name in teams_input:
-            if team_name not in all_teams:
-                results.append({"team": team_name, "error": "❌ Team not found"})
+        team_id = teams[team_name]
+
+        # ------------------ Fetch Last 10 Finished Matches ------------------
+        headers = {"X-Auth-Token": API_KEY}
+        url = f"{BASE_URL}/teams/{team_id}/matches?status=FINISHED&limit=10"
+        response = requests.get(url, headers=headers)
+        data = response.json()
+
+        matches = data.get("matches", [])
+
+        if not matches:
+            bot.reply_to(message, f"No recent matches found for {team_name}")
+            return
+
+        # ------------------ Calculate Probabilities ------------------
+        over15 = over25 = btts = wins = 0
+        for match in matches:
+            home = match["score"]["fullTime"]["home"]
+            away = match["score"]["fullTime"]["away"]
+
+            if home is None or away is None:
                 continue
 
-            # Simulate last 5 matches
-            matches = []
-            for _ in range(5):
-                home_goals = random.randint(0, 4)
-                away_goals = random.randint(0, 4)
-                team_is_home = random.choice([True, False])
-                matches.append({
-                    "home_goals": home_goals,
-                    "away_goals": away_goals,
-                    "team_is_home": team_is_home
-                })
+            total_goals = home + away
 
-            # Calculate probabilities
-            over15 = over25 = btts = wins = 0
-            for match in matches:
-                home = match["home_goals"]
-                away = match["away_goals"]
-                total_goals = home + away
+            if total_goals > 1.5: over15 += 1
+            if total_goals > 2.5: over25 += 1
+            if home > 0 and away > 0: btts += 1
 
-                if total_goals > 1.5: over15 += 1
-                if total_goals > 2.5: over25 += 1
-                if home > 0 and away > 0: btts += 1
-                if match["team_is_home"] and home > away: wins += 1
-                elif not match["team_is_home"] and away > home: wins += 1
+            team_is_home = match["home"]["id"] == team_id
+            if (team_is_home and home > away) or (not team_is_home and away > home):
+                wins += 1
 
-            total = len(matches)
-            over15_prob = round((over15 / total) * 100)
-            over25_prob = round((over25 / total) * 100)
-            btts_prob = round((btts / total) * 100)
-            win_prob = round((wins / total) * 100)
-            safest_pick = "Over 1.5" if over15_prob >= 70 else "Check BTTS / Win"
+        total = len(matches)
+        over15_prob = round((over15 / total) * 100)
+        over25_prob = round((over25 / total) * 100)
+        btts_prob = round((btts / total) * 100)
+        win_prob = round((wins / total) * 100)
 
-            results.append({
-                "team": team_name,
-                "over15": over15_prob,
-                "over25": over25_prob,
-                "btts": btts_prob,
-                "win": win_prob,
-                "safest": safest_pick
-            })
+        safest_pick = "Over 1.5" if over15_prob >= 70 else "Check BTTS / Win"
 
-        # Build reply
-        reply_lines = []
-        for r in results:
-            if "error" in r:
-                reply_lines.append(f"{r['team']}: {r['error']}")
-            else:
-                reply_lines.append(
-                    f"📊 {r['team']}\n"
-                    f"Over 1.5: {r['over15']}% | Over 2.5: {r['over25']}% | "
-                    f"BTTS: {r['btts']}% | Win: {r['win']}%\n"
-                    f"⭐ Safest Pick: {r['safest']}\n"
-                )
+        # ------------------ Build Reply ------------------
+        reply = f"""
+📊 Real Analysis for {team_name} (Last {total} Matches)
 
-        bot.reply_to(message, "\n".join(reply_lines))
+Over 1.5 Goals: {over15_prob}%
+Over 2.5 Goals: {over25_prob}%
+BTTS: {btts_prob}%
+Win Probability: {win_prob}%
+
+⭐ Safest Pick: {safest_pick}
+"""
+        bot.reply_to(message, reply)
 
     except Exception as e:
         bot.reply_to(message, f"❌ An error occurred: {e}")
 
-# ------------------ DAILY SAFEST PICKS ------------------
+# ------------------ DAILY SAFEST PICKS (Simulated for now) ------------------
 @bot.message_handler(commands=['daily'])
 def daily(message):
-    try:
-        reply_lines = []
-        for league_name, teams_list in leagues.items():
-            league_results = []
+    reply_lines = [
+        "🏆 Daily Safest Picks (Simulated):",
+        "Premier League: Arsenal FC - Over 1.5",
+        "La Liga: Barcelona - Over 1.5",
+        "Serie A: Juventus - Over 1.5",
+        "Bundesliga: Bayern Munich - Over 1.5",
+        "Ligue 1: Paris SG - Over 1.5"
+    ]
+    bot.reply_to(message, "\n".join(reply_lines))
 
-            for team_name in teams_list:
-                matches = []
-                for _ in range(5):
-                    home_goals = random.randint(0, 4)
-                    away_goals = random.randint(0, 4)
-                    team_is_home = random.choice([True, False])
-                    matches.append({
-                        "home_goals": home_goals,
-                        "away_goals": away_goals,
-                        "team_is_home": team_is_home
-                    })
-
-                over15 = sum(1 for m in matches if m["home_goals"] + m["away_goals"] > 1.5)
-                safest_pick = "Over 1.5" if over15 >= 4 else "Check BTTS / Win"
-                league_results.append({
-                    "team": team_name,
-                    "over15": round((over15 / 5) * 100),
-                    "safest": safest_pick
-                })
-
-            # Rank by over15 probability
-            league_results.sort(key=lambda x: x["over15"], reverse=True)
-            top = league_results[0]
-            reply_lines.append(f"🏆 {league_name} Top Pick: {top['team']} ({top['safest']})")
-
-        bot.reply_to(message, "\n".join(reply_lines))
-
-    except Exception as e:
-        bot.reply_to(message, f"❌ An error occurred: {e}")
-
-# ------------------ START POLLING ------------------
+# ------------------ START BOT ------------------
 bot.infinity_polling()
