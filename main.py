@@ -1,16 +1,12 @@
 import telebot
-import requests
+import random
 import os
 
 # ------------------ ENV VARIABLES ------------------
 TOKEN = os.getenv("TOKEN")
-API_KEY = os.getenv("API_KEY")
 
 if not TOKEN:
     raise ValueError("TOKEN is missing in Railway variables.")
-
-if not API_KEY:
-    raise ValueError("API_KEY is missing in Railway variables.")
 
 bot = telebot.TeleBot(TOKEN)
 
@@ -27,16 +23,13 @@ def start(message):
 def ping(message):
     bot.reply_to(message, "✅ Bot is alive!")
 
-# ------------------ TOP TEAMS DATA (Free Plan) ------------------
-# league = 39 (Premier League), season = 2026
-teams = {
-    "Arsenal FC": {"id": 42, "league": 39, "season": 2026},
-    "Chelsea FC": {"id": 49, "league": 39, "season": 2026},
-    "Liverpool FC": {"id": 40, "league": 39, "season": 2026},
-    "Manchester United FC": {"id": 33, "league": 39, "season": 2026},
-    "Manchester City FC": {"id": 50, "league": 39, "season": 2026},
-    "Tottenham Hotspur FC": {"id": 47, "league": 39, "season": 2026}
-}
+# ------------------ TOP TEAMS ------------------
+# You can expand this list later for other leagues
+teams = [
+    "Arsenal FC", "Chelsea FC", "Liverpool FC",
+    "Manchester United FC", "Manchester City FC",
+    "Tottenham Hotspur FC", "Leicester City FC", "Everton FC"
+]
 
 # ------------------ ANALYZE COMMAND ------------------
 @bot.message_handler(commands=['analyze'])
@@ -44,63 +37,41 @@ def analyze(message):
     try:
         team_name = message.text.split(" ", 1)[1]
 
-        # Check if team exists in predefined list
+        # Check if team exists in our list
         if team_name not in teams:
             bot.reply_to(message, "❌ Team not found in top Premier League teams.")
             return
 
-        team_info = teams[team_name]
-        team_id = team_info["id"]
-        league_id = team_info["league"]
-        season = team_info["season"]
-
-        # ------------------ GET LAST 5 MATCHES ------------------
-        url = "https://v3.football.api-sports.io/fixtures"
-        headers = {
-            "x-apisports-key": API_KEY,
-            "Accept": "application/json"
-        }
-        params = {
-            "team": team_id,
-            "league": league_id,
-            "season": season,
-            "last": 5
-        }
-
-        response = requests.get(url, headers=headers, params=params)
-        data = response.json()
-
-        if data["results"] == 0:
-            bot.reply_to(message, f"No recent matches found for {team_name}")
-            return
-
-        matches = data["response"]
+        # ------------------ SIMULATE LAST 5 MATCHES ------------------
+        matches = []
+        for _ in range(5):
+            home_goals = random.randint(0, 4)
+            away_goals = random.randint(0, 4)
+            team_is_home = random.choice([True, False])
+            matches.append({
+                "home_goals": home_goals,
+                "away_goals": away_goals,
+                "team_is_home": team_is_home
+            })
 
         # ------------------ CALCULATE PROBABILITIES ------------------
-        over15 = 0
-        over25 = 0
-        btts = 0
-        wins = 0
+        over15 = over25 = btts = wins = 0
 
         for match in matches:
-            home_goals = match["goals"]["home"]
-            away_goals = match["goals"]["away"]
+            home = match["home_goals"]
+            away = match["away_goals"]
+            total_goals = home + away
 
-            # Over 1.5 / 2.5
-            if home_goals + away_goals > 1.5:
+            if total_goals > 1.5:
                 over15 += 1
-            if home_goals + away_goals > 2.5:
+            if total_goals > 2.5:
                 over25 += 1
-
-            # BTTS
-            if home_goals > 0 and away_goals > 0:
+            if home > 0 and away > 0:
                 btts += 1
 
-            # Win calculation
-            team_is_home = match["teams"]["home"]["id"] == team_id
-            if team_is_home and home_goals > away_goals:
+            if match["team_is_home"] and home > away:
                 wins += 1
-            elif not team_is_home and away_goals > home_goals:
+            elif not match["team_is_home"] and away > home:
                 wins += 1
 
         total = len(matches)
@@ -109,11 +80,12 @@ def analyze(message):
         btts_prob = round((btts / total) * 100)
         win_prob = round((wins / total) * 100)
 
-        # ------------------ BUILD REPLY ------------------
+        # ------------------ SAFEST PICK ------------------
         safest_pick = "Over 1.5" if over15_prob >= 70 else "Check BTTS / Win"
 
+        # ------------------ BUILD REPLY ------------------
         reply = f"""
-📊 Analysis for {team_name} (Last {total} matches)
+📊 Analysis for {team_name} (Simulated Last {total} Matches)
 
 Over 1.5 Goals: {over15_prob}%
 Over 2.5 Goals: {over25_prob}%
